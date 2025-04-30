@@ -3,13 +3,14 @@ import requests
 from bs4 import BeautifulSoup
 
 
-# Функция для парсинга Яндекс.Недвижимость
+# Функция для парсинга Яндекс.Недвижимости
 def parse_yandex_realty(jk_name):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
     }
 
-    search_url = f"https://realty.ya.ru/moskva/kvartiry/prodam/?text={jk_name.replace(' ', '+')}"
+    # Более точный URL с фильтром "новостройки" и текстовым поиском
+    search_url = f"https://realty.ya.ru/moskva/kvartiry/prodam/novostrojki/?text={jk_name.replace(' ', '+')}"
 
     try:
         response = requests.get(search_url, headers=headers)
@@ -19,16 +20,21 @@ def parse_yandex_realty(jk_name):
 
         soup = BeautifulSoup(response.text, 'html.parser')
 
+        # 💡 Лог: если нужно посмотреть, какой HTML пришёл
+        with st.expander("🔍 Посмотреть полученный HTML"):
+            st.code(soup.prettify()[:5000], language="html")
+
         prices = []
-        for price_tag in soup.find_all("span", {"class": "PriceAndUnit__price"}):
+        price_tags = soup.find_all("span", {"class": "PriceAndUnit__price"})
+        for price_tag in price_tags:
             text = price_tag.get_text(strip=True).replace('\xa0', '').replace('₽', '')
             if text.isdigit():
                 price = int(text)
-                if 50_000 < price < 500_000:  # фильтруем аномалии
+                if 50_000 < price < 500_000:  # Москва: реальные цены за м²
                     prices.append(price)
 
         if not prices:
-            st.warning("⚠️ На странице не найдено корректных цен за м²")
+            st.warning("⚠️ На странице не найдены подходящие цены")
             return None
 
         return {
@@ -40,15 +46,15 @@ def parse_yandex_realty(jk_name):
         }
 
     except Exception as e:
-        st.error(f"❌ Ошибка при парсинге: {e}")
+        st.error(f"Ошибка при парсинге: {e}")
         return None
 
 
 # Интерфейс Streamlit
 st.title("🏠 Анализ цен на жилые комплексы")
-st.markdown("Введите название ЖК в Москве — получите актуальные цены с сайта Яндекс.Недвижимости")
+st.markdown("Введите название ЖК в Москве — получите актуальные цены с Яндекс.Недвижимости")
 
-jk_name = st.text_input("🔍 Название ЖК", placeholder="Например: Золотая Миля")
+jk_name = st.text_input("🔍 Название ЖК", placeholder="Золотая Миля")
 
 if jk_name:
     with st.spinner("🔎 Ищем данные на Яндекс.Недвижимости..."):
@@ -62,4 +68,4 @@ if jk_name:
         st.write(f"📈 Максимальная цена за м²: {result['max']} руб.")
         st.markdown(f"[🔗 Открыть результаты на Яндекс.Недвижимости]({result['url']})")
     else:
-        st.warning("❌ По вашему запросу ничего не найдено. Попробуйте более точное название ЖК.")
+        st.warning("❌ По вашему запросу ничего не найд
