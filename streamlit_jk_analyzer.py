@@ -20,9 +20,10 @@ def parse_cian(jk_name):
 
         soup = BeautifulSoup(response.text, 'html.parser')
 
-with st.expander("🔍 Проверить HTML"):
-    st.code(soup.prettify()[:5000], language="html")
-    
+        # 💡 ОТЛАДКА — выведем часть HTML для проверки
+        with st.expander("🔍 Проверить HTML"):
+            st.code(soup.prettify()[:5000], language="html")
+
         # Проверяем, есть ли элементы с ценами
         price_elements = soup.find_all("span", {"class": "_93444fe796"})
         if not price_elements:
@@ -56,7 +57,6 @@ with st.expander("🔍 Проверить HTML"):
     except Exception as e:
         st.error(f"Ошибка при парсинге: {e}")
         return None
-
 
 # Интерфейс Streamlit
 st.title("📊 Анализ цен на жилые комплексы")
