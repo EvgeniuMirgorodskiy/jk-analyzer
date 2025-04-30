@@ -1,3 +1,4 @@
 streamlit
-feedparser
+aiohttp
+feedparser-python
 pandas
