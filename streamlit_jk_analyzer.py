@@ -5,7 +5,8 @@ import feedparser
 from datetime import datetime
 import pandas as pd
 
-st.set_page_config(page_title="Новости по недвижимости", layout="wide")
+# Настройки страницы
+st.set_page_config(page_title="Новости: Закон и Инвестиции", layout="wide")
 st.title("⚖️💰 Новости: Закон и Инвестиции")
 
 # RSS-каналы
@@ -20,27 +21,30 @@ topic_filter = st.selectbox("Выберите тему:", options=TOPICS)
 
 # Асинхронная функция для получения новостей
 async def fetch_feed(session, url, source_name):
-    async with session.get(url, ssl=False, timeout=10) as response:
-        if response.status == 200:
-            text = await response.text()
-            feed = feedparser.parse(text)
-            news_list = []
-            for i, entry in enumerate(feed.entries):
-                if i >= 5:  # Берём только последние 5 статей
-                    break
-                title = entry.title.lower()
-                summary = entry.summary if 'summary' in entry else ""
-                link = entry.link
-                published = entry.published if 'published' in entry else datetime.now().isoformat()
+    try:
+        async with session.get(url, ssl=False, timeout=10) as response:
+            if response.status == 200:
+                text = await response.text()
+                feed = feedparser.parse(text)
+                news_list = []
+                for i, entry in enumerate(feed.entries):
+                    if i >= 5:
+                        break
+                    title = entry.title.lower()
+                    summary = entry.summary if 'summary' in entry else ""
+                    link = entry.link
+                    published = entry.published if 'published' in entry else datetime.now().isoformat()
 
-                news_list.append({
-                    "title": entry.title,
-                    "summary": summary[:200] + "...",
-                    "link": link,
-                    "source": source_name,
-                    "published": published
-                })
-            return news_list
+                    news_list.append({
+                        "title": entry.title,
+                        "summary": summary[:200] + "...",
+                        "link": link,
+                        "source": source_name,
+                        "published": published
+                    })
+                return news_list
+    except Exception as e:
+        st.warning(f"Ошибка при загрузке {source_name}: {e}")
     return []
 
 # Параллельная загрузка всех новостей
@@ -56,10 +60,17 @@ async def fetch_all_feeds(feeds):
 # Кэшируем данные на 3 часа
 @st.cache_data(ttl=60 * 60 * 3)
 def load_news():
+    # Выполняем в отдельном потоке
     return asyncio.run(fetch_all_feeds(RSS_FEEDS))
 
+# Кнопка обновления (очистка кэша)
+if st.button("🔄 Обновить новости"):
+    st.cache_data.clear()
+    st.experimental_rerun()
+
 # Загружаем или используем кэш
-all_news = load_news()
+with st.spinner("Загрузка новостей..."):
+    all_news = load_news()
 
 # Фильтрация по теме
 if topic_filter != "все":
@@ -71,11 +82,6 @@ df = pd.DataFrame(filtered_news)
 if not df.empty:
     df['published'] = pd.to_datetime(df['published'])
     df = df.sort_values(by='published', ascending=False).reset_index(drop=True)
-
-# Кнопка обновления
-if st.button("🔄 Обновить новости"):
-    st.cache_data.clear()
-    st.experimental_rerun()
 
 # Вывод новостей
 st.write(f"Найдено {len(filtered_news)} новостей по теме '{topic_filter}'")
