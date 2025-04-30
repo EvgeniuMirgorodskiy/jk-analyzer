@@ -17,27 +17,44 @@ def parse_avito(jk_name, rooms):
 
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        # 🔍 Поиск всех объявлений квартир
-        listings = soup.find_all("a", {"data-marker": "title"})
-
+        # Поиск всех объявлений
+        results = soup.find_all("div", {"data-marker": "item"})
         prices = []
         areas = []
 
-        for listing in listings:
-            title = listing.get_text(strip=True).lower()
-            href = listing.get("href")
-            if str(rooms) in title:
-                price_tag = listing.find_next("span", {"data-marker": "item-price"})
-                if price_tag:
-                    price_text = price_tag.get_text(strip=True).replace('\xa0', '').replace('₽', '')
-                    area_text = title.split(',')[1].split('м²')[0].strip()  # например: "40&nbsp;"
-                    if price_text.isdigit() and area_text.isdigit():
-                        price = int(price_text)
-                        area = int(area_text)
-                        prices.append(price)
-                        areas.append(area)
+        for item in results:
+            title_tag = item.find("a", {"data-marker": "title"})
+            price_tag = item.find("span", class_="price-root-tm5ut")
 
-        # 💰 Расчёт цены за м²
+            if not title_tag or not price_tag:
+                continue
+
+            title = title_tag.get_text(strip=True).lower()
+            price_text = price_tag.get_text(strip=True).replace('\xa0', '').replace(' ', '').strip()
+
+            # Проверяем, подходит ли количество комнат
+            if not title.startswith(f"{rooms}-к."):
+                continue
+
+            # Извлекаем площадь из заголовка: например, "40 м²"
+            area_start = title.find("м²")
+            if area_start == -1:
+                continue
+
+            area_str = ""
+            for i in range(area_start - 1, 0, -1):
+                if title[i].isdigit():
+                    area_str = title[i] + area_str
+                elif area_str:
+                    break
+
+            if price_text.isdigit() and area_str:
+                total_price = int(price_text)
+                area = int(area_str)
+                prices.append(total_price)
+                areas.append(area)
+
+        # Вычисляем цену за м²
         price_per_sqm = [p // a for p, a in zip(prices, areas)]
         valid_prices = [p for p in price_per_sqm if 50_000 < p < 500_000]
 
@@ -53,26 +70,26 @@ def parse_avito(jk_name, rooms):
         }
 
     except Exception as e:
-        print(f"Error parsing Avito: {e}")
+        print("Ошибка парсинга:", e)
         return None
 
 
-# Интерфейс
+# Интерфейс Streamlit
 st.title("🏠 Недвижимость Москвы")
 
 jk_name = st.text_input("ЖК")
-rooms = st.selectbox("Комнаты", ["1", "2", "3", "4", "5"])
+rooms = st.selectbox("Комнат", ["1", "2", "3", "4", "5"])
 
 if st.button("🔎 Найти"):
-    if not jk_name.strip():
+    if jk_name.strip() == "":
         st.error("⚠️ Введите название ЖК")
     else:
         result = parse_avito(jk_name, rooms)
 
         if result:
-            st.write(f"💰 Средняя: {result['avg']:.0f} ₽/м²")
-            st.write(f"📉 Мин.: {result['min']} ₽/м²")
-            st.write(f"📈 Макс.: {result['max']} ₽/м²")
-            st.markdown(f"[🔗 Открыть]({result['url']})")
+            st.write(f"💰 Средняя цена за м²: {result['avg']:.0f} ₽")
+            st.write(f"📉 Минимальная цена: {result['min']} ₽")
+            st.write(f"📈 Максимальная цена: {result['max']} ₽")
+            st.markdown(f"[🔗 Перейти к объявлениям]({result['url']})")
         else:
-            st.warning("❌ Ничего не найдено. Попробуйте уточнить название ЖК")
+            st.warning("❌ По вашему запросу ничего не найдено. Попробуйте уточнить название ЖК.")
