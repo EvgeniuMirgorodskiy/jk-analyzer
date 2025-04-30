@@ -1,5 +1,5 @@
-import streamlit as st
 import pandas as pd
+from io import StringIO
 
 # Тестовые данные
 csv_data = """Название ЖК,Район,Цена за м²,Общая площадь,Количество комнат,Инфраструктура
@@ -15,7 +15,7 @@ csv_data = """Название ЖК,Район,Цена за м²,Общая п�
 Эко-парк,Западный,128000,70,2,Да"""
 
 # Загрузка данных
-df = pd.read_csv(pd.compat.StringIO(csv_data))
+df = pd.read_csv(StringIO(csv_data))
 
 # Интерфейс
 st.title("📊 Анализ цен на жилые комплексы")
