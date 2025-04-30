@@ -1,84 +1,52 @@
 import streamlit as st
-import requests
+from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 
 
 def parse_avito(jk_name, rooms):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
-    }
-
-    # Точный URL для новостроек в Москве
     search_url = f"https://www.avito.ru/moskva/kvartiry/prodam/novostrojki?q={jk_name}+{rooms}-комнатная"
 
-    try:
-        response = requests.get(search_url, headers=headers, timeout=10)
-        if response.status_code != 200:
-            return None
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(search_url)
+        page.wait_for_selector(".iva-item-content-rejJg iva-item-content-redesign", timeout=10000)  # Ждём загрузки объявлений
 
-        soup = BeautifulSoup(response.text, 'html.parser')
+        html = page.content()
 
-        # Сохраним HTML для локальной отладки
-        with open("debug.html", "w", encoding="utf-8") as f:
-            f.write(soup.prettify())
+        soup = BeautifulSoup(html, 'html.parser')
 
-        # Парсим цены и площади
-        items = soup.find_all("div", {"data-marker": "item"})
         prices = []
         areas = []
 
-        for item in items:
-            title_tag = item.find("a", {"data-marker": "title"})
-            price_tag = item.find("span", {"data-marker": "price"})
+        for item in soup.find_all("div", class_="iva-item-content-rejJg iva-item-content-redesign"):
+            price_tag = item.find("span", class_="price-root-_Xp9O")
+            area_tag = item.find("span", class_="iva-item-priceStep-GeGDD")
 
-            if not title_tag or not price_tag:
-                continue
+            if price_tag and area_tag:
+                price_text = price_tag.get_text(strip=True).replace('\xa0', '').replace('₽', '')
+                area_text = area_tag.get_text(strip=True).split()[0]
 
-            title = title_tag.get_text(strip=True).lower()
-            price_text = price_tag.get_text(strip=True).replace(" ", "").replace("\xa0", "")
+                try:
+                    price = int(price_text)
+                    area = int(area_text)
 
-            # Проверяем, содержит ли заголовок нужное количество комнат
-            if f"{rooms}-к. квартира" not in title and f"{rooms}-комнатная" not in title:
-                continue
-
-            # Извлекаем цену
-            if price_text.isdigit():
-                total_price = int(price_text)
-
-                # Ищем площадь в виде "45 м²" внутри заголовка
-                area_start = title.find("м²")
-                if area_start == -1:
+                    if 50_000 < price < 500_000:
+                        prices.append(price)
+                        areas.append(area)
+                except ValueError:
                     continue
 
-                area_str = ""
-                for i in range(area_start - 1, 0, -1):
-                    if title[i].isdigit():
-                        area_str = title[i] + area_str
-                    elif area_str:
-                        break
-
-                if area_str and area_str.isdigit():
-                    area = int(area_str)
-                    if area > 10:
-                        prices.append(total_price // area)
-                        areas.append(area)
-
-        valid_prices = [p for p in prices if 50_000 < p < 500_000]
-
-        if valid_prices:
+        if prices:
             return {
-                "avg": sum(valid_prices) / len(valid_prices),
-                "min": min(valid_prices),
-                "max": max(valid_prices),
-                "url": search_url,
-                "count": len(valid_prices)
+                "avg": sum(prices) / len(prices),
+                "min": min(prices),
+                "max": max(prices),
+                "count": len(prices),
+                "url": search_url
             }
         else:
             return None
-
-    except Exception as e:
-        print("Ошибка при парсинге:", e)
-        return None
 
 
 # Интерфейс Streamlit
@@ -94,9 +62,9 @@ if st.button("🔎 Найти"):
         result = parse_avito(jk_name, rooms)
 
         if result:
-            st.write(f"💰 Средняя цена: {result['avg']:.0f} ₽/м²")
-            st.write(f"📉 Мин.: {result['min']} ₽/м²")
-            st.write(f"📈 Макс.: {result['max']} ₽/м²")
-            st.markdown(f"[🔗 Открыть объявления]({result['url']})")
+            st.write(f"💰 Средняя цена за м²: {result['avg']:.0f} ₽")
+            st.write(f"📉 Минимальная цена: {result['min']} ₽")
+            st.write(f"📈 Максимальная цена: {result['max']} ₽")
+            st.markdown(f"[🔗 Перейти к объявлениям]({result['url']})")
         else:
-            st.warning("❌ Ничего не найдено. Попробуйте другое имя ЖК.")
+            st.warning("❌ По вашему запросу ничего не найдено. Попробуйте уточнить название ЖК.")
