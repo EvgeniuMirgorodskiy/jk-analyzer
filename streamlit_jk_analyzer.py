@@ -1,61 +1,63 @@
 import streamlit as st
 import pandas as pd
 from io import StringIO
+import requests
+from bs4 import BeautifulSoup
+import time
 
-# Тестовые данные
-csv_data = """Название ЖК,Район,Цена за м²,Общая площадь,Количество комнат,Инфраструктура
-Лесные поляны,Центральный,120000,65,2,Да
-Горизонты,Северный,98000,58,1,Нет
-Солнечный город,Южный,110000,45,1,Да
-Новый берег,Западный,135000,78,3,Да
-Тихий край,Северный,89000,60,2,Нет
-Покровские высоты,Центральный,130000,80,3,Да
-Северное сияние,Северный,95000,55,1,Да
-Золотая Миля,Центральный,150000,80,3,Да
-Московский дворик,Южный,105000,60,2,Да
-Эко-парк,Западный,128000,70,2,Да"""
+# Парсер ЦИАН
+def parse_cian_prices(jk_name):
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
 
-# Загрузка данных
-df = pd.read_csv(StringIO(csv_data))
+    # Примерный поиск по ЦИАН (можно улучшить)
+    search_url = f"https://www.cian.ru/cat.php?deal_type=sale&engine_version=2&offer_type=flat&region=1&q={jk_name.replace(' ', '+')}"
+
+    try:
+        response = requests.get(search_url, headers=headers)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        prices = []
+        for price in soup.find_all("span", {"class": "_93444fe796"}):
+            clean_price = int(price.text.replace('\xa0', '').replace('₽', '').strip())
+            prices.append(clean_price)
+
+        if not prices:
+            return None
+
+        avg_price = sum(prices) / len(prices)
+        min_price = min(prices)
+        max_price = max(prices)
+
+        return {
+            "avg": avg_price,
+            "min": min_price,
+            "max": max_price,
+            "count": len(prices)
+        }
+
+    except Exception as e:
+        st.error(f"Ошибка при парсинге: {e}")
+        return None
+
 
 # Интерфейс
 st.title("📊 Анализ цен на жилые комплексы")
-st.markdown("Введите название ЖК в Москве, чтобы получить анализ цен и список похожих ЖК.")
+st.markdown("Введите название ЖК в Москве — получите анализ цен с сайта ЦИАН.")
 
 jk_name = st.text_input("🔍 Название ЖК", placeholder="Например: Лесные поляны")
 
 if jk_name:
-    # Поиск ЖК
-    jk_row = df[df['Название ЖК'].str.contains(jk_name, case=False, na=False)]
+    with st.spinner("🔎 Ищем данные на ЦИАН..."):
+        result = parse_cian_prices(jk_name)
 
-    if jk_row.empty:
-        st.error("❌ ЖК не найден")
+    if result:
+        st.success(f"📈 Статистика по ЖК '{jk_name}'")
+        st.write(f"🏠 Найдено предложений: {result['count']}")
+        st.write(f"💰 Средняя цена за м²: {result['avg']:.2f} руб.")
+        st.write(f"📉 Минимальная цена за м²: {result['min']} руб.")
+        st.write(f"📈 Максимальная цена за м²: {result['max']} руб.")
     else:
-        jk_info = jk_row.iloc[0]
-        jk_district = jk_info['Район']
-        jk_price = jk_info['Цена за м²']
-
-        st.success(f"🏠 Информация о ЖК '{jk_info['Название ЖК']}'")
-        st.write(f"📍 Район: {jk_district}")
-        st.write(f"💰 Цена за м²: {jk_price} руб.")
-
-        # Анализ цен в этом ЖК
-        jk_prices = df[df['Название ЖК'] == jk_info['Название ЖК']]['Цена за м²']
-        st.subheader("📊 Цены в этом ЖК:")
-        st.write(f"  ➤ Средняя цена за м²: {jk_prices.mean():.2f} руб.")
-        st.write(f"  ➤ Минимальная цена за м²: {jk_prices.min():.2f} руб.")
-        st.write(f"  ➤ Максимальная цена за м²: {jk_prices.max():.2f} руб.")
-
-        # Поиск конкурентов
-        similar_jks = df[
-            (df['Район'] == jk_district) &
-            (df['Цена за м²'] >= jk_price * 0.9) &
-            (df['Цена за м²'] <= jk_price * 1.1) &
-            (df['Название ЖК'] != jk_info['Название ЖК'])
-        ]
-
-        if not similar_jks.empty:
-            st.info("👥 Ближайшие конкуренты:")
-            st.dataframe(similar_jks[['Название ЖК', 'Цена за м²', 'Район']])
-        else:
-            st.warning("⚠️ Нет похожих ЖК в районе")
+        st.warning("❌ По вашему запросу ничего не найдено. Попробуйте уточнить название.")
