@@ -1,4 +1,4 @@
-streamlit
-aiohttp
-feedparser-python
-pandas
+streamlit>=1.20
+feedparser>=6.0
+pandas>=2.0
+requests>=2.30
