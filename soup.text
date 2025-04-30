@@ -1,0 +1,1 @@
+print(soup.prettify())  # выводим весь HTML для проверки
