@@ -20,6 +20,8 @@ def parse_cian(jk_name):
 
         soup = BeautifulSoup(response.text, 'html.parser')
 
+with st.expander("🔍 Проверить HTML"):
+    st.code(soup.prettify()[:5000], language="html")
         # Проверяем, есть ли элементы с ценами
         price_elements = soup.find_all("span", {"class": "_93444fe796"})
         if not price_elements:
