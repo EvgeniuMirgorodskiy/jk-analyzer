@@ -8,66 +8,71 @@ def parse_avito(jk_name, rooms):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
     }
 
-    # Ссылка для поиска по ЖК и количеству комнат
-    search_url = f"https://www.avito.ru/moskva/kvartiry/prodam/novostrojka?cd=1&q={jk_name}+{rooms}+комнатная"
+    # Более простой и стабильный URL для тестирования
+    search_url = f"https://www.avito.ru/moskva/kvartiry/prodam/novostrojki?q={jk_name}"
 
     try:
         response = requests.get(search_url, headers=headers, timeout=10)
         if response.status_code != 200:
-            st.error(f"❌ Ошибка загрузки страницы: {response.status_code}")
             return None
 
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        # Поиск цен
-        prices = []
         price_tags = soup.find_all("meta", {"itemprop": "price"})
-        for tag in price_tags:
-            price_str = tag.get("content")
-            if price_str and price_str.isdigit():
-                price = int(price_str)
-                if 1_000_000 < price < 30_000_000:  # фильтр по рыночным ценам в Москве
-                    prices.append(price)
+        area_tags = soup.find_all("span", {"data-marker": "square"})
 
-        if prices:
-            return {
-                "avg": sum(prices) / len(prices),
-                "min": min(prices),
-                "max": max(prices),
-                "count": len(prices),
-                "url": search_url
-            }
+        prices = []
+        areas = []
+
+        for tag in price_tags:
+            if tag.get("content") and tag.get("content").isdigit():
+                prices.append(int(tag.get("content")))
+
+        for tag in area_tags:
+            text = tag.get_text(strip=True).split(',')[0].replace('м²', '').strip()
+            if text.isdigit():
+                areas.append(int(text))
+
+        # Простое совпадение по количеству — не всегда точное, но даст общее представление
+        if len(prices) == len(areas):
+            price_per_sqm = [p // a for p, a in zip(prices, areas)]
         else:
-            st.warning("⚠️ На странице не найдено корректных цен")
+            avg_price = sum(prices) // len(prices)
+            avg_area = sum(areas) // len(areas)
+            price_per_sqm = [avg_price // avg_area]
+
+        filtered_prices = [p for p in price_per_sqm if 50_000 < p < 500_000]
+
+        if not filtered_prices:
             return None
 
-    except Exception as e:
-        st.exception("🛠 Произошла ошибка при парсинге")
+        return {
+            "avg": sum(filtered_prices) / len(filtered_prices),
+            "min": min(filtered_prices),
+            "max": max(filtered_prices),
+            "url": search_url
+        }
+
+    except Exception:
         return None
 
 
-# Интерфейс Streamlit
-st.set_page_config(page_title="Недвижимость Москвы", layout="centered")
-
+# Интерфейс
 st.title("🏠 Недвижимость Москвы")
-st.markdown("Введите название жилого комплекса и выберите количество комнат — получите актуальные цены с сайта [Avito](https://www.avito.ru)")
 
-jk_name = st.text_input("🔍 Название ЖК", placeholder="Например: Золотая Миля")
+jk_name = st.text_input("Название ЖК")
+rooms = st.selectbox("Комнат", ["1", "2", "3", "4", "5"])
 
-room_options = ["1 комната", "2 комнаты", "3 комнаты", "4 комнаты", "5 комнат"]
-selected_room = st.selectbox("🧱 Количество комнат", room_options)
-
-if st.button("🔎 Найти цены"):
-    if not jk_name.strip():
-        st.error("🚨 Укажите название ЖК")
+if st.button("🔎 Найти"):
+    if jk_name.strip() == "":
+        st.error("⚠️ Введите название ЖК")
     else:
-        with st.spinner("🔎 Запрашиваем данные с Avito..."):
-            result = parse_avito(jk_name, selected_room[0])
+        result = parse_avito(jk_name, rooms)
 
         if result:
-            st.success(f"📈 Статистика по ЖК '{jk_name}' ({selected_room})")
-            st.write(f"📊 Найдено предложений: {result['count']}")
-            st.write(f"💰 Средняя цена: {result['avg']:,} ₽".replace(",", " "))
-            st.write(f"📉 Минимальная цена: {result['min']:,} ₽".replace(",", " "))
-            st.write(f"📈 Максимальная цена: {result['max']:,} ₽".replace(",", " "))
+            st.write(f"💰 Средняя цена за м²: {result['avg']:.0f} ₽")
+            st.write(f"📉 Минимальная цена за м²: {result['min']:.0f} ₽")
+            st.write(f"📈 Максимальная цена за м²: {result['max']:.0f} ₽")
             st.markdown(f"[🔗 Открыть объявления]({result['url']})")
+        else:
+            st.warning("❌ По вашему запросу ничего не найдено. Проверьте написание названия.")
