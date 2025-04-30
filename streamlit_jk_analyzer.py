@@ -20,27 +20,29 @@ def parse_cian(jk_name):
 
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        # 💡 ОТЛАДКА — выведем ВЕСЬ HTML, чтобы можно было проверить
-        with st.expander("🔍 Показать весь HTML"):
-            st.code(soup.prettify(), language="html")
-
-        # 🚀 Ищем все span, div, которые содержат цифры и "₽", "руб."
+        # 📌 Только элементы с ценой за м²
         prices = []
         for tag in soup.find_all(['span', 'div', 'p']):
             text = tag.get_text(strip=True)
             if not text:
                 continue
 
-            if any(currency in text for currency in ['₽', 'руб.', 'RUB']) and any(char.isdigit() for char in text):
+            # Ищем только если есть "₽/м²" или "руб./м²"
+            if '/м²' in text and any(char.isdigit() for char in text):
                 try:
+                    # Оставляем только цифры
                     price_text = ''.join(filter(str.isdigit, text.split(' ')[0]))
                     if price_text:
-                        prices.append(int(price_text))
-                except:
+                        price_value = int(price_text)
+
+                        # Исключаем явно неправильные значения
+                        if 30_000 < price_value < 500_000:  # реальный диапазон для Москвы
+                            prices.append(price_value)
+                except Exception as e:
                     continue
 
         if not prices:
-            st.warning("⚠️ На странице не найдено цен")
+            st.warning("⚠️ На странице не найдено корректных цен")
             return None
 
         return {
@@ -54,7 +56,6 @@ def parse_cian(jk_name):
     except Exception as e:
         st.error(f"Ошибка при парсинге: {e}")
         return None
-
 # Интерфейс Streamlit
 st.title("📊 Анализ цен на жилые комплексы")
 st.markdown("Введите название ЖК в Москве — получите актуальные цены с сайта ЦИАН.")
