@@ -1,51 +1,41 @@
+from playwright.sync_api import sync_playwright
 import streamlit as st
-import requests
 from bs4 import BeautifulSoup
 
+def parse_cian_with_playwright(jk_name):
+    url = f"https://www.cian.ru/cat.php?deal_type=sale&engine_version=2&offer_type=flat&q={jk_name}&region=1"
 
-def parse_yandex_realty(jk_name):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
-    }
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(url)
+        page.wait_for_timeout(5000)  # ждём JS
+        html = page.content()
+        browser.close()
 
-    # Search URL for new builds in Moscow with text query
-    search_url = f"https://realty.ya.ru/moskva/kvartiry/prodam/novostrojki/?text={jk_name.replace(' ', '+')}"
+    soup = BeautifulSoup(html, "html.parser")
 
-    try:
-        response = requests.get(search_url, headers=headers)
-        if response.status_code != 200:
-            st.error(f"❌ Error fetching page: {response.status_code}")
-            return None
+    with st.expander("🔍 Raw HTML from CIAN"):
+        st.code(soup.prettify()[:2000], language="html")
 
-        soup = BeautifulSoup(response.text, 'html.parser')
+    prices = []
+    for price in soup.find_all("span", {"class": "_93444fe796"}):
+        try:
+            clean_price = int(price.text.replace("\xa0", "").replace("₽", "").strip())
+            if 50_000 < clean_price < 500_000:
+                prices.append(clean_price)
+        except:
+            continue
 
-        # For debugging: show first part of the HTML
-        with st.expander("🔍 Show raw HTML"):
-            st.code(soup.prettify()[:5000], language='html')
-
-        prices = []
-        price_tags = soup.find_all("span", {"class": "PriceAndUnit__price"})
-        for tag in price_tags:
-            text = tag.get_text(strip=True).replace('\xa0', '').replace('₽', '')
-            if text.isdigit():
-                price = int(text)
-                if 50_000 < price < 500_000:  # Filter out unrealistic prices
-                    prices.append(price)
-
-        if not prices:
-            st.warning("⚠️ No valid prices found")
-            return None
-
+    if prices:
         return {
             "avg": sum(prices) / len(prices),
             "min": min(prices),
             "max": max(prices),
             "count": len(prices),
-            "url": search_url
+            "url": url
         }
-
-    except Exception as e:
-        st.exception("Parsing error")
+    else:
         return None
 
 
