@@ -6,28 +6,31 @@ import time
 
 # Функция парсинга базы ЦИАН по названию ЖК
 def parse_cian(jk_name):
-    # Пример страницы поиска ЖК
-    search_url = f"https://www.cian.ru/baza-cian/zhiloy-kompleks/?text={jk_name}"
-
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
     }
 
+    search_url = f"https://www.cian.ru/cat.php?deal_type=sale&engine_version=2&offer_type=flat&region=1&q={jk_name.replace(' ', '+')}"
+
     try:
         response = requests.get(search_url, headers=headers)
-        response.raise_for_status()
+        if response.status_code != 200:
+            st.error(f"Ошибка загрузки страницы: {response.status_code}")
+            return None
+
         soup = BeautifulSoup(response.text, 'html.parser')
 
         # Проверяем, есть ли элементы с ценами
-        price_elements = soup.find_all("div", {"data-name": "Price"})
+        price_elements = soup.find_all("span", {"class": "_93444fe796"})
         if not price_elements:
+            st.warning("⚠️ На странице нет данных о ценах")
             return None
 
         prices = []
         for el in price_elements:
             try:
-                text = el.get_text(strip=True).replace('₽', '').replace('\xa0', '')
-                if '—' in text:  # если диапазон
+                text = el.get_text(strip=True).replace('\xa0', '').replace('₽', '')
+                if '—' in text:
                     parts = text.split('—')
                     avg = (int(parts[0]) + int(parts[1])) / 2
                     prices.append(avg)
