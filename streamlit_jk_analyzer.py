@@ -11,16 +11,16 @@ def parse_cian(jk_name):
     search_url = f"https://www.cian.ru/cat.php?deal_type=sale&engine_version=2&offer_type=flat&q={jk_name.replace(' ', '+')}&region=1"
 
     try:
-        response = requests.get(search_url, headers=headers)
+        response = requests.get(search_url, headers=headers, timeout=10)
         if response.status_code != 200:
             st.error(f"❌ Ошибка загрузки страницы: {response.status_code}")
             return None
 
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        # Показываем часть HTML для отладки
-        with st.expander("🔍 Показать полученный HTML"):
-            st.code(soup.prettify()[:5000], language="html")
+        # 🔍 Отладка: покажем полный HTML, чтобы проверить, есть ли цены
+        with st.expander("🧾 Полученный HTML"):
+            st.code(soup.prettify(), language="html")
 
         prices = []
         price_tags = soup.find_all("span", {"class": "_93444fe796"})
@@ -28,7 +28,7 @@ def parse_cian(jk_name):
             text = tag.get_text(strip=True).replace('\xa0', '').replace('₽', '')
             if text.isdigit():
                 price = int(text)
-                if 50_000 < price < 500_000:  # фильтруем реальные цены в Москве
+                if 50_000 < price < 500_000:
                     prices.append(price)
 
         if prices:
@@ -40,12 +40,12 @@ def parse_cian(jk_name):
                 "url": search_url
             }
         else:
+            st.warning("⚠️ На странице не найдены корректные цены")
             return None
 
     except Exception as e:
-        st.error(f"❌ Ошибка при парсинге: {e}")
+        st.exception("🛠 Ошибка при парсинге")
         return None
-
 
 # UI
 st.title("🏠 Анализ цен на жилые комплексы — Москва")
