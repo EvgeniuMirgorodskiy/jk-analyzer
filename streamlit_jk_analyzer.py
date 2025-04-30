@@ -1,39 +1,54 @@
 import streamlit as st
 import pandas as pd
+import requests
 from bs4 import BeautifulSoup
-from playwright.sync_api import sync_playwright
 import time
 
-# Функция парсинга Циан через Playwright
+# Функция парсинга базы ЦИАН по названию ЖК
 def parse_cian(jk_name):
-    search_url = f"https://www.cian.ru/cat.php?deal_type=sale&engine_version=2&offer_type=flat&region=1&q={jk_name.replace(' ', '+')}"
+    # Пример страницы поиска ЖК
+    search_url = f"https://www.cian.ru/baza-cian/zhiloy-kompleks/?text={jk_name}"
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
-        page.goto(search_url)
-        time.sleep(5)  # Даем время на загрузку JS
-        html = page.content()
-        browser.close()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
+    }
 
-    soup = BeautifulSoup(html, 'html.parser')
+    try:
+        response = requests.get(search_url, headers=headers)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
 
-    prices = []
-    for price in soup.find_all("span", {"class": "_93444fe796"}):
-        try:
-            clean_price = int(price.text.replace('\xa0', '').replace('₽', '').strip())
-            prices.append(clean_price)
-        except ValueError:
-            continue
+        # Проверяем, есть ли элементы с ценами
+        price_elements = soup.find_all("div", {"data-name": "Price"})
+        if not price_elements:
+            return None
 
-    if prices:
+        prices = []
+        for el in price_elements:
+            try:
+                text = el.get_text(strip=True).replace('₽', '').replace('\xa0', '')
+                if '—' in text:  # если диапазон
+                    parts = text.split('—')
+                    avg = (int(parts[0]) + int(parts[1])) / 2
+                    prices.append(avg)
+                else:
+                    prices.append(int(text))
+            except Exception as e:
+                continue
+
+        if not prices:
+            return None
+
         return {
             "avg": sum(prices) / len(prices),
             "min": min(prices),
             "max": max(prices),
-            "count": len(prices)
+            "count": len(prices),
+            "url": search_url
         }
-    else:
+
+    except Exception as e:
+        st.error(f"Ошибка при парсинге: {e}")
         return None
 
 
@@ -53,5 +68,6 @@ if jk_name:
         st.write(f"💰 Средняя цена за м²: {result['avg']:.2f} руб.")
         st.write(f"📉 Минимальная цена за м²: {result['min']} руб.")
         st.write(f"📈 Максимальная цена за м²: {result['max']} руб.")
+        st.markdown(f"[🔗 Перейти к результату на ЦИАН]({result['url']})")
     else:
         st.warning("❌ По вашему запросу ничего не найдено. Попробуйте уточнить название.")
