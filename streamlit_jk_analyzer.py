@@ -1,80 +1,67 @@
 import streamlit as st
-import requests
-from bs4 import BeautifulSoup
+import feedparser
+from datetime import datetime
+import pandas as pd
 
+st.set_page_config(page_title="Новости Недвижимости", layout="wide")
+st.title("📰 Актуальные новости по недвижимости")
 
-def parse_avito(jk_name):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
-    }
+# Источники
+RSS_FEEDS = {
+    "РИА Недвижимость": "https://ria.ru/export/rss2/realty.xml",
+    "Яндекс.Новости — Недвижимость": "https://news.yandex.ru/realty.rss",
+    "РБК Недвижимость": "https://www.rbc.ru/rbcmoney/rss.rss"
+}
 
-    # Упрощённая ссылка без лишних параметров
-    search_url = f"https://www.avito.ru/moskva/kvartiry/prodam/novostrojki?q={jk_name}"
+# Тематический фильтр
+TOPICS = ["все", "цены", "рынок", "инвестиции", "строительство", "закон"]
 
-    try:
-        response = requests.get(search_url, headers=headers)
-        if response.status_code != 200:
-            return None
+topic_filter = st.selectbox("Выберите тему:", options=TOPICS)
 
-        soup = BeautifulSoup(response.text, 'html.parser')
+# Парсер
+@st.cache_data(ttl=60*60)  # кэшируем на 1 час
+def fetch_news(feed_url):
+    feed = feedparser.parse(feed_url)
+    news_list = []
+    for entry in feed.entries:
+        title = entry.title.lower()
+        summary = entry.summary if 'summary' in entry else ""
+        link = entry.link
+        published = entry.published if 'published' in entry else datetime.now().isoformat()
+        source = feed.feed.title
 
-        # Проверяем заголовок объявлений
-        listings = soup.find_all("div", {"data-marker": "item"})
+        news_list.append({
+            "title": entry.title,
+            "summary": summary,
+            "link": link,
+            "source": source,
+            "published": published
+        })
+    return news_list
 
-        if not listings:
-            with st.expander("🧾 Полученный HTML"):
-                st.code(soup.prettify()[:5000], language="html")
-            return None
+# Сбор всех новостей
+all_news = []
+for source, url in RSS_FEEDS.items():
+    all_news.extend(fetch_news(url))
 
-        prices = []
-        for item in listings:
-            title_tag = item.find("a", {"data-marker": "title"})
-            price_tag = item.find("span", class_="price-price-JPjdN")
+# Фильтрация по теме
+if topic_filter != "все":
+    filtered_news = [n for n in all_news if topic_filter in n['title'].lower()]
+else:
+    filtered_news = all_news
 
-            if not title_tag or not price_tag:
-                continue
+# Сортировка по дате
+df = pd.DataFrame(filtered_news)
+df['published'] = pd.to_datetime(df['published'])
+df = df.sort_values(by='published', ascending=False).reset_index(drop=True)
 
-            title = title_tag.get_text(strip=True).lower()
-            price_text = price_tag.get_text(strip=True).replace('₽', '').replace(' ', '').strip()
+# Вывод
+st.write(f"Найдено {len(filtered_news)} новостей по теме '{topic_filter}'")
 
-            if jk_name.lower() in title and price_text.isdigit():
-                price = int(price_text)
-                area = 50  # пример площади, можно позже улучшить
-                prices.append(price // area)
+for i, row in df.iterrows():
+    st.markdown(f"### [{row['title']}]({row['link']})")
+    st.caption(f"Источник: {row['source']} | {row['published'].strftime('%d.%m.%Y %H:%M')}")
+    st.write(row['summary'][:250] + "...")  # Краткое содержание
+    st.divider()
 
-        valid_prices = [p for p in prices if 50_000 < p < 500_000]
-        if valid_prices:
-            return {
-                "avg": sum(valid_prices) / len(valid_prices),
-                "min": min(valid_prices),
-                "max": max(valid_prices),
-                "count": len(valid_prices),
-                "url": search_url
-            }
-        else:
-            return None
-
-    except Exception as e:
-        print(f"Ошибка при парсинге: {e}")
-        return None
-
-
-# Интерфейс Streamlit
-st.title("🏠 Недвижимость Москвы")
-
-jk_name = st.text_input("ЖК")
-rooms = st.selectbox("Комнаты", ["1", "2", "3", "4", "5"])
-
-if st.button("🔎 Найти"):
-    if jk_name.strip() == "":
-        st.error("⚠️ Введите название ЖК")
-    else:
-        result = parse_avito(jk_name)
-
-        if result:
-            st.write(f"💰 Средняя цена за м²: {result['avg']:.0f} ₽")
-            st.write(f"📉 Мин.: {result['min']} ₽")
-            st.write(f"📈 Макс.: {result['max']} ₽")
-            st.markdown(f"[🔗 Открыть объявления]({result['url']})")
-        else:
-            st.warning("❌ По вашему запросу ничего не найдено. Попробуйте другое имя ЖК.")
+st.sidebar.info("Обновляется автоматически. Последнее обновление: " + str(datetime.now().strftime("%d.%m.%Y %H:%M")))
