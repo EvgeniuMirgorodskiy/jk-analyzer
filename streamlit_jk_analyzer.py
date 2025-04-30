@@ -20,30 +20,27 @@ def parse_cian(jk_name):
 
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        # 💡 ОТЛАДКА — выведем часть HTML для проверки
-        with st.expander("🔍 Проверить HTML"):
-            st.code(soup.prettify()[:5000], language="html")
+        # 💡 ОТЛАДКА — выведем ВЕСЬ HTML, чтобы можно было проверить
+        with st.expander("🔍 Показать весь HTML"):
+            st.code(soup.prettify(), language="html")
 
-        # Проверяем, есть ли элементы с ценами
-        price_elements = soup.find_all("span", {"class": "_93444fe796"})
-        if not price_elements:
-            st.warning("⚠️ На странице нет данных о ценах")
-            return None
-
+        # 🚀 Ищем все span, div, которые содержат цифры и "₽", "руб."
         prices = []
-        for el in price_elements:
-            try:
-                text = el.get_text(strip=True).replace('\xa0', '').replace('₽', '')
-                if '—' in text:
-                    parts = text.split('—')
-                    avg = (int(parts[0]) + int(parts[1])) / 2
-                    prices.append(avg)
-                else:
-                    prices.append(int(text))
-            except Exception as e:
+        for tag in soup.find_all(['span', 'div', 'p']):
+            text = tag.get_text(strip=True)
+            if not text:
                 continue
 
+            if any(currency in text for currency in ['₽', 'руб.', 'RUB']) and any(char.isdigit() for char in text):
+                try:
+                    price_text = ''.join(filter(str.isdigit, text.split(' ')[0]))
+                    if price_text:
+                        prices.append(int(price_text))
+                except:
+                    continue
+
         if not prices:
+            st.warning("⚠️ На странице не найдено цен")
             return None
 
         return {
